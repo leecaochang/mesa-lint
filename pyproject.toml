@@ -1,0 +1,73 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mesa-lint"
+version = "0.1.0"
+description = "CI-friendly linter for MESA semantic profiles: mesa_profile.json sidecars and mesa-core profile stores."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Steven Fox", email = "sfox38@gmail.com" }]
+keywords = ["mesa", "home-assistant", "lint", "ci", "mcp", "ai-agents", "ai-safety"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Quality Assurance",
+    "Typing :: Typed",
+]
+dependencies = ["mesa-core>=1.1"]
+
+[project.optional-dependencies]
+yaml = ["pyyaml>=6"]
+dev = ["ruff>=0.6", "mypy>=1.11", "pytest>=8", "pyyaml>=6"]
+
+[project.scripts]
+mesa-lint = "mesa_lint.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/sfox38/mesa-lint"
+
+[tool.hatch.build.targets.wheel]
+packages = ["mesa_lint"]
+
+[tool.hatch.build.targets.sdist]
+# Allowlist, not a blacklist: only these paths can ever ship, regardless of
+# what untracked local files (editor state, notes, caches) exist on disk.
+only-include = [
+    "mesa_lint",
+    "tests",
+    "README.md",
+    "LICENSE",
+    "pyproject.toml",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["mesa_lint"]
+
+[[tool.mypy.overrides]]
+module = ["yaml.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
