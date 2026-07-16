@@ -50,6 +50,26 @@ def test_trust_laundering_is_validator_warning() -> None:
     assert any(f.code == "validator" and "laundering" in f.message for f in findings)
 
 
+def test_non_dict_semantic_profile_is_an_error() -> None:
+    findings = lint_document({"semantic_profile": "bad"}, location="x")
+    assert any(f.severity == "error" and f.code == "invalid-semantic-profile" for f in findings)
+
+
+def test_non_dict_semantic_profile_reports_one_error() -> None:
+    # Not both invalid-semantic-profile and mesa-core's generic schema error: newer
+    # mesa-core reports the non-object case too, and the two must not double up.
+    findings = lint_document({"semantic_profile": "bad"}, location="x")
+    errors = [f for f in findings if f.severity == "error"]
+    assert len(errors) == 1
+    assert errors[0].code == "invalid-semantic-profile"
+
+
+def test_non_dict_document_is_reported_not_raised() -> None:
+    # mesa-core owns this verdict; the linter must not crash reaching for it.
+    findings = lint_document([1, 2, 3], location="x")  # type: ignore[arg-type]
+    assert any(f.severity == "error" and f.code == "schema" for f in findings)
+
+
 def test_missing_control_reason_warning() -> None:
     findings = lint_document(
         doc(operational_boundaries={"control_mode": "prohibited"}), location="x"
@@ -114,6 +134,12 @@ def test_lint_store_dir_flags_bad_deployment_defaults(tmp_path: Path) -> None:
     )
     findings, _, _ = lint_store_dir(tmp_path)
     assert any(f.code == "deployment-defaults" for f in findings)
+
+
+def test_lint_store_dir_flags_non_object_deployment_defaults(tmp_path: Path) -> None:
+    (tmp_path / "__deployment_defaults__.json").write_text(json.dumps([1, 2, 3]))
+    findings, _, _ = lint_store_dir(tmp_path)
+    assert any(f.severity == "error" and f.code == "deployment-defaults" for f in findings)
 
 
 def test_check_automations_wraps_trigger_validator() -> None:

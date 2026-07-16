@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mesa-lint"
-version = "0.1.0"
+version = "0.1.1"
 description = "CI-friendly linter for MESA semantic profiles: mesa_profile.json sidecars and mesa-core profile stores."
 readme = "README.md"
 requires-python = ">=3.11"

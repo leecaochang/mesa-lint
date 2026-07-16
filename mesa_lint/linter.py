@@ -65,13 +65,35 @@ def lint_document(
     """Lint one profile document. ``entity_id`` enables identity-dependent
     checks; ``sidecar`` adjusts provenance advice (Spec 5.3)."""
     findings: list[Finding] = []
+
+    if isinstance(doc, dict) and not isinstance(doc.get("semantic_profile", doc), dict):
+        # A present-but-non-object semantic_profile: mesa-core cannot load this at all.
+        # mesa-core >=1.1 also reports it through validate_document, so emit only this
+        # specific finding and skip the generic pass; running both would double-report
+        # one defect, and nothing else is checkable on a non-object body. A non-object
+        # *document* is left to validate_document below, which owns that verdict.
+        sp = doc["semantic_profile"]
+        findings.append(
+            Finding(
+                ERROR,
+                "invalid-semantic-profile",
+                f"semantic_profile must be an object, not {type(sp).__name__}; "
+                "mesa-core cannot load this profile",
+                location,
+            )
+        )
+        return findings
+
     report = validate_document(doc, entity_id or "")
     findings.extend(Finding(ERROR, "schema", err, location) for err in report.errors)
     findings.extend(Finding(WARNING, "validator", warn, location) for warn in report.warnings)
 
-    sp = doc.get("semantic_profile", doc)
-    if not isinstance(sp, dict):
+    if not isinstance(doc, dict):
+        # validate_document already reported "profile document must be an object".
         return findings
+
+    sp = doc.get("semantic_profile", doc)
+
     ob_raw = sp.get("operational_boundaries")
     ob = ob_raw if isinstance(ob_raw, dict) else {}
 
@@ -162,9 +184,24 @@ def lint_store_dir(path: Path) -> tuple[list[Finding], dict[str, dict[str, Any]]
             findings.append(Finding(ERROR, "unreadable", str(err), location))
             continue
         if key == _DEFAULTS_KEY:
+            if not isinstance(doc, dict):
+                # from_dict reaches for .get straight away, so a non-object raises
+                # AttributeError rather than one of the malformed-input errors below.
+                findings.append(
+                    Finding(
+                        ERROR,
+                        "deployment-defaults",
+                        f"malformed: expected an object, not {type(doc).__name__}",
+                        location,
+                    )
+                )
+                continue
             try:
                 DeploymentDefaults.from_dict(doc)
-            except (ValueError, TypeError, KeyError) as err:
+            # mesa-core 1.2.1+ validates nested overrides and reports a
+            # MesaValidationError, which is not a ValueError; older versions let
+            # the raw errors through from the enum and dict lookups.
+            except (MesaValidationError, ValueError, TypeError, KeyError) as err:
                 findings.append(
                     Finding(ERROR, "deployment-defaults", f"malformed: {err}", location)
                 )

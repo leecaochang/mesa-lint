@@ -52,6 +52,21 @@ def test_invalid_sidecar_exits_one(tmp_path: Path, capsys: pytest.CaptureFixture
     assert "[E] schema" in capsys.readouterr().out
 
 
+def test_non_dict_semantic_profile_exits_one(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    sidecar = write(tmp_path / "mesa_profile.json", {"semantic_profile": "bad"})
+    assert main([str(sidecar)]) == 1
+    assert "[E] invalid-semantic-profile" in capsys.readouterr().out
+
+
+def test_top_level_list_exits_one(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    sidecar = tmp_path / "mesa_profile.json"
+    sidecar.write_text(json.dumps([1, 2, 3]))
+    assert main([str(sidecar)]) == 1
+    assert "[E] schema" in capsys.readouterr().out
+
+
 def test_warnings_pass_unless_strict(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     sidecar = write(tmp_path / "mesa_profile.json", WARN_ONLY)
     assert main([str(sidecar)]) == 0
