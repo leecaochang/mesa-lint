@@ -7,7 +7,7 @@ name = "mesa-lint"
 version = "0.2.0"
 description = "CI-friendly linter for MESA semantic profiles: mesa_profile.json sidecars and mesa-core profile stores."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Steven Fox", email = "sfox38@gmail.com" }]
 keywords = ["mesa", "home-assistant", "lint", "ci", "mcp", "ai-agents", "ai-safety"]
@@ -17,7 +17,6 @@ classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
@@ -52,7 +51,7 @@ only-include = [
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
@@ -61,7 +60,7 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
 "tests/**" = ["E501"]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 strict = true
 files = ["mesa_lint"]
 
