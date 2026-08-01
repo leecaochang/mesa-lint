@@ -117,28 +117,33 @@ def test_missing_origin_message_differs_for_sidecars() -> None:
 def test_lint_store_dir_handles_reserved_keys(tmp_path: Path) -> None:
     (tmp_path / "light.x.json").write_text(json.dumps(doc()))
     (tmp_path / f"{quote('__domain__:lock', safe='')}.json").write_text(json.dumps(doc()))
+    (tmp_path / f"{quote('__device__:abc123', safe='')}.json").write_text(json.dumps(doc()))
     (tmp_path / "__deployment_defaults__.json").write_text(
         json.dumps({"deployment_defaults": {"default_control_mode": "confirm"}})
     )
     (tmp_path / "broken.json").write_text("{not json")
 
-    findings, entity_docs, count = lint_store_dir(tmp_path)
-    assert count == 4
+    findings, entity_docs, scoped_docs, count = lint_store_dir(tmp_path)
+    assert count == 5
     assert set(entity_docs) == {"light.x"}  # scope and defaults keys are not entities
+    assert set(scoped_docs) == {"__domain__:lock", "__device__:abc123"}
     assert any(f.code == "unreadable" for f in findings)
+    # Scope docs are linted without entity identity: no helper/person misfires
+    # from the pseudo entity_id a reserved key would otherwise split into.
+    assert not any(f.code == "helper-none" for f in findings)
 
 
 def test_lint_store_dir_flags_bad_deployment_defaults(tmp_path: Path) -> None:
     (tmp_path / "__deployment_defaults__.json").write_text(
         json.dumps({"deployment_defaults": {"default_control_mode": "yolo"}})
     )
-    findings, _, _ = lint_store_dir(tmp_path)
+    findings, _, _, _ = lint_store_dir(tmp_path)
     assert any(f.code == "deployment-defaults" for f in findings)
 
 
 def test_lint_store_dir_flags_non_object_deployment_defaults(tmp_path: Path) -> None:
     (tmp_path / "__deployment_defaults__.json").write_text(json.dumps([1, 2, 3]))
-    findings, _, _ = lint_store_dir(tmp_path)
+    findings, _, _, _ = lint_store_dir(tmp_path)
     assert any(f.severity == "error" and f.code == "deployment-defaults" for f in findings)
 
 
@@ -159,3 +164,69 @@ def test_check_orphans() -> None:
     findings = check_orphans({"light.gone": doc(), "light.kept": doc()}, ["light.kept"])
     assert [f.location for f in findings] == ["light.gone"]
     assert all(f.code == "orphan" for f in findings)
+
+
+def test_check_automations_resolves_inherited_none_from_domain_scope() -> None:
+    # A none declared only at domain scope was previously never cross-checked:
+    # the entity has no stored profile of its own, and scoped docs were dropped.
+    automations = [
+        {
+            "id": "automation.evening",
+            "trigger": [{"platform": "state", "entity_id": "light.porch"}],
+        }
+    ]
+    none_doc = doc(operational_boundaries={"triggers_automations": "none"})
+    findings = check_automations(
+        {},
+        automations,
+        scoped_docs={"__domain__:light": none_doc},
+        known_entity_ids=["light.porch"],
+    )
+    assert len(findings) == 1
+    assert findings[0].code == "stale-none" and findings[0].location == "light.porch"
+
+    # Without the entity registry the inheriting entity cannot be enumerated.
+    assert (
+        check_automations({}, automations, scoped_docs={"__domain__:light": none_doc}) == []
+    )
+
+
+def test_check_automations_resolves_inherited_none_from_integration_scope() -> None:
+    # Integration scope resolves through the domain fallback when the name is
+    # domain-defining (Spec 5.6), which is all the linter can do with no registry.
+    automations = [
+        {
+            "id": "automation.evening",
+            "trigger": [{"platform": "state", "entity_id": "light.porch"}],
+        }
+    ]
+    none_doc = doc(operational_boundaries={"triggers_automations": "none"})
+    findings = check_automations(
+        {},
+        automations,
+        scoped_docs={"__integration__:light": none_doc},
+        known_entity_ids=["light.porch"],
+    )
+    assert len(findings) == 1 and findings[0].location == "light.porch"
+
+
+def test_check_automations_tolerates_area_and_device_scopes() -> None:
+    # Area and device layers are inert without HA registry mappings; their
+    # presence must neither crash nor produce spurious findings.
+    automations = [
+        {
+            "id": "automation.evening",
+            "trigger": [{"platform": "state", "entity_id": "light.porch"}],
+        }
+    ]
+    none_doc = doc(operational_boundaries={"triggers_automations": "none"})
+    findings = check_automations(
+        {},
+        automations,
+        scoped_docs={
+            "__area__:area.porch": none_doc,
+            "__device__:abc123": none_doc,
+        },
+        known_entity_ids=["light.porch"],
+    )
+    assert findings == []

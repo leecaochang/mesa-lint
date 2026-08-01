@@ -27,7 +27,9 @@ mesa-lint /config/mesa/ --automations automations.json
 mesa-lint /config/mesa/ --entities entities.txt
 ```
 
-`--automations` accepts JSON natively, or YAML with `pip install 'mesa-lint[yaml]'`. `--entities` takes one entity ID per line.
+`--automations` accepts JSON natively, or YAML with `pip install 'mesa-lint[yaml]'`. `--entities` takes one entity ID per line and does double duty: it drives the orphan check and feeds the automations cross-check as the deployment's entity registry.
+
+As of 0.2, the automations cross-check resolves through profile inheritance: a `triggers_automations: none` declared at domain or integration scope is checked for every entity it covers, provided `--entities` names them. Store directories may contain all five scope namespaces (`__domain__:`, `__integration__:`, `__area__:`, `__device__:`); area- and device-scope declarations are linted for validity but stay inert in the cross-check, because resolving them needs HA registry mappings a CLI does not have.
 
 ## CI usage
 

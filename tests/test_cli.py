@@ -132,3 +132,33 @@ def test_missing_path_is_usage_error(tmp_path: Path) -> None:
     with pytest.raises(SystemExit) as exc:
         main([str(tmp_path / "nope.json")])
     assert exc.value.code == 2
+
+
+def test_automations_cross_check_resolves_scoped_none_with_entities(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A domain-scope none plus the --entities registry catches an inherited
+    # stale none on an entity with no stored profile of its own (mesa-lint 0.2).
+    from urllib.parse import quote
+
+    store = tmp_path / "store"
+    store.mkdir()
+    none_profile: dict[str, Any] = {
+        "semantic_profile": {
+            "metadata_origin": {"source": "user"},
+            "operational_boundaries": {"triggers_automations": "none"},
+        },
+        "privacy_classification": {"level": "normal"},
+    }
+    write(store / f"{quote('__domain__:sensor', safe='')}.json", none_profile)
+    automations = write(
+        tmp_path / "automations.json",
+        {"id": "automation.alarm", "trigger": [{"platform": "state", "entity_id": "sensor.door"}]},  # type: ignore[arg-type]
+    )
+    entities = tmp_path / "entities.txt"
+    entities.write_text("sensor.door\n")
+    assert main([str(store), "--automations", str(automations), "--entities", str(entities)]) == 1
+    assert "stale-none" in capsys.readouterr().out
+
+    # Without --entities the inheriting entity cannot be enumerated: exit 0.
+    assert main([str(store), "--automations", str(automations)]) == 0

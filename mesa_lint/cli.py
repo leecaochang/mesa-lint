@@ -75,21 +75,25 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         help=(
             "file with one entity ID per line; profiles keyed by entities not "
-            "listed are reported as orphans; requires a store directory input"
+            "listed are reported as orphans, and the list also feeds the "
+            "--automations cross-check as the deployment's entity registry; "
+            "requires a store directory input"
         ),
     )
     args = parser.parse_args(argv)
 
     findings: list[Finding] = []
     entity_docs: dict[str, dict[str, Any]] = {}
+    scoped_docs: dict[str, dict[str, Any]] = {}
     profile_count = 0
     saw_dir = False
     for path in args.paths:
         if path.is_dir():
             saw_dir = True
-            dir_findings, docs, count = lint_store_dir(path)
+            dir_findings, docs, scoped, count = lint_store_dir(path)
             findings.extend(dir_findings)
             entity_docs.update(docs)
+            scoped_docs.update(scoped)
             profile_count += count
         elif path.is_file():
             profile_count += 1
@@ -102,16 +106,25 @@ def main(argv: list[str] | None = None) -> int:
         else:
             parser.error(f"{path}: no such file or directory")
 
-    if args.automations is not None:
-        if not saw_dir:
-            parser.error("--automations requires a profile store directory input")
-        findings.extend(check_automations(entity_docs, _load_automations(args.automations)))
+    known: list[str] | None = None
     if args.entities is not None:
         if not saw_dir:
             parser.error("--entities requires a profile store directory input")
         known = [
             line.strip() for line in args.entities.read_text().splitlines() if line.strip()
         ]
+    if args.automations is not None:
+        if not saw_dir:
+            parser.error("--automations requires a profile store directory input")
+        findings.extend(
+            check_automations(
+                entity_docs,
+                _load_automations(args.automations),
+                scoped_docs=scoped_docs,
+                known_entity_ids=known,
+            )
+        )
+    if known is not None:
         findings.extend(check_orphans(entity_docs, known))
 
     errors = sum(1 for finding in findings if finding.severity == ERROR)
