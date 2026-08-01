@@ -10,7 +10,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 from mesa_lint.linter import (
     ERROR,
@@ -23,23 +23,47 @@ from mesa_lint.linter import (
 )
 
 
+def _input_error(message: str) -> NoReturn:
+    """Report a usage or input error and exit 2, the documented contract.
+
+    ``SystemExit(message)`` prints the message but exits 1, which reads in CI
+    as "the lint run found problems" rather than "the input was unusable", so
+    the code is set explicitly.
+    """
+    print(message, file=sys.stderr)
+    raise SystemExit(2)
+
+
+def _read_text(path: Path) -> str:
+    try:
+        return path.read_text()
+    except OSError as err:
+        _input_error(f"{path}: {err.strerror or err}")
+
+
 def _load_automations(path: Path) -> list[dict[str, Any]]:
-    text = path.read_text()
+    text = _read_text(path)
     if path.suffix in (".yaml", ".yml"):
         try:
             import yaml
         except ImportError:
-            raise SystemExit(
+            _input_error(
                 f"{path}: YAML input requires the yaml extra "
                 "(pip install 'mesa-lint[yaml]')"
-            ) from None
-        data = yaml.safe_load(text)
+            )
+        try:
+            data = yaml.safe_load(text)
+        except yaml.YAMLError as err:
+            _input_error(f"{path}: malformed YAML: {err}")
     else:
-        data = json.loads(text)
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError as err:
+            _input_error(f"{path}: malformed JSON: {err}")
     if isinstance(data, dict):
         data = [data]
     if not isinstance(data, list):
-        raise SystemExit(f"{path}: expected a list of automation configs")
+        _input_error(f"{path}: expected a list of automation configs")
     return [config for config in data if isinstance(config, dict)]
 
 
@@ -111,7 +135,7 @@ def main(argv: list[str] | None = None) -> int:
         if not saw_dir:
             parser.error("--entities requires a profile store directory input")
         known = [
-            line.strip() for line in args.entities.read_text().splitlines() if line.strip()
+            line.strip() for line in _read_text(args.entities).splitlines() if line.strip()
         ]
     if args.automations is not None:
         if not saw_dir:

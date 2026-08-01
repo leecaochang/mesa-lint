@@ -162,3 +162,46 @@ def test_automations_cross_check_resolves_scoped_none_with_entities(
 
     # Without --entities the inheriting entity cannot be enumerated: exit 0.
     assert main([str(store), "--automations", str(automations)]) == 0
+
+
+# ------------------- input errors exit 2, never a traceback (audit 11 F3)
+
+
+def test_malformed_automations_file_is_an_input_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    store = tmp_path / "store"
+    store.mkdir()
+    write(store / "light.x.json", VALID)
+    bad = tmp_path / "automations.json"
+    bad.write_text("{not json")
+    with pytest.raises(SystemExit) as exc:
+        main([str(store), "--automations", str(bad)])
+    assert exc.value.code == 2
+    assert "malformed JSON" in capsys.readouterr().err
+
+
+def test_missing_input_files_are_input_errors(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    store = tmp_path / "store"
+    store.mkdir()
+    write(store / "light.x.json", VALID)
+    for flag in ("--automations", "--entities"):
+        with pytest.raises(SystemExit) as exc:
+            main([str(store), flag, str(tmp_path / "nope")])
+        assert exc.value.code == 2
+        assert "No such file" in capsys.readouterr().err
+
+
+def test_wrong_shaped_automations_file_is_an_input_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    store = tmp_path / "store"
+    store.mkdir()
+    write(store / "light.x.json", VALID)
+    wrong = write(tmp_path / "automations.json", "not a list")  # type: ignore[arg-type]
+    with pytest.raises(SystemExit) as exc:
+        main([str(store), "--automations", str(wrong)])
+    assert exc.value.code == 2
+    assert "expected a list" in capsys.readouterr().err
