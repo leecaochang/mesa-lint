@@ -1,6 +1,8 @@
 # mesa-lint
 
-Linter for [MESA](https://github.com/sfox38/mesa-core) semantic profiles. Run it in CI against the `mesa_profile.json` sidecar your Home Assistant integration ships, or point it at a mesa-core profile store directory to sweep an entire deployment.
+Linter for [MESA](https://github.com/leecaochang/mesa-core) semantic profiles. Run it in CI against the `mesa_profile.json` sidecar your Home Assistant integration ships, or point it at a mesa-core profile store directory to sweep an entire deployment.
+
+注意：我不是 MESA 的原始开发者。我维护这个分支，但仅限于修复缺陷和实现已有规范，不会添加新功能。
 
 ```bash
 pip install mesa-lint

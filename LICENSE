@@ -181,7 +181,7 @@
       comment syntax for the file format in use. An end-line or comment
       delimiter may be needed for some file formats.
 
-   Copyright 2026 Steven Fox
+   Copyright 2026 Steven Fox & Linus Lee
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.

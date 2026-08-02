@@ -9,7 +9,7 @@ description = "CI-friendly linter for MESA semantic profiles: mesa_profile.json 
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "Apache-2.0" }
-authors = [{ name = "Steven Fox", email = "sfox38@gmail.com" }]
+authors = [{ name = "Linus Lee", email = "311940018+leecaochang@users.noreply.github.com" }]
 keywords = ["mesa", "home-assistant", "lint", "ci", "mcp", "ai-agents", "ai-safety"]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -33,7 +33,7 @@ dev = ["ruff>=0.6", "mypy>=1.11", "pytest>=8", "pyyaml>=6"]
 mesa-lint = "mesa_lint.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/sfox38/mesa-lint"
+Homepage = "https://github.com/leecaochang/mesa-lint"
 
 [tool.hatch.build.targets.wheel]
 packages = ["mesa_lint"]
