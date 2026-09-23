@@ -126,7 +126,7 @@ def test_lint_store_dir_handles_reserved_keys(tmp_path: Path) -> None:
     findings, entity_docs, scoped_docs, count = lint_store_dir(tmp_path)
     assert count == 5
     assert set(entity_docs) == {"light.x"}  # scope and defaults keys are not entities
-    assert set(scoped_docs) == {"__domain__:lock", "__device__:abc123"}
+    assert set(scoped_docs) == {"__domain__:lock", "__device__:abc123", "__deployment_defaults__"}
     assert any(f.code == "unreadable" for f in findings)
     # Scope docs are linted without entity identity: no helper/person misfires
     # from the pseudo entity_id a reserved key would otherwise split into.

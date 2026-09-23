@@ -8,6 +8,7 @@ single source of truth for what is malformed.
 
 from __future__ import annotations
 
+import contextlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -184,8 +185,8 @@ def lint_store_dir(
         location = str(file)
         count += 1
         try:
-            doc = json.loads(file.read_text())
-        except (OSError, json.JSONDecodeError) as err:
+            doc = json.loads(file.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as err:
             findings.append(Finding(ERROR, "unreadable", str(err), location))
             continue
         if key == _DEFAULTS_KEY:
@@ -203,6 +204,7 @@ def lint_store_dir(
                 continue
             try:
                 DeploymentDefaults.from_dict(doc)
+                scoped_docs[key] = doc
             # mesa-core 1.2.1+ validates nested overrides and reports a
             # MesaValidationError, which is not a ValueError; older versions let
             # the raw errors through from the enum and dict lookups.
@@ -241,8 +243,8 @@ def check_automations(
     automation configs (wraps mesa-core's TriggerValidator).
 
     ``scoped_docs`` (from ``lint_store_dir``) loads the domain, integration,
-    area, and device profiles into the store, so a ``none`` an entity only
-    inherits is cross-checked too. ``known_entity_ids`` names the deployment's
+    area, and device profiles and validated deployment defaults into the store,
+    so an inherited ``none`` is cross-checked too. ``known_entity_ids`` names the deployment's
     entities: without it, only entities carrying their own stored profile can
     be enumerated. Structural limits, documented rather than hidden: the
     linter has no HA registry, so area and device layers resolve for nothing
@@ -257,6 +259,11 @@ def check_automations(
         except MesaValidationError:
             continue  # already reported as a schema error
     for key, doc in (scoped_docs or {}).items():
+        if key == "__deployment_defaults__":
+            # Malformed defaults already have a deployment-defaults finding.
+            with contextlib.suppress(MesaValidationError):
+                store.set_deployment_defaults(doc)
+            continue
         for prefix, setter_name in _SCOPE_SETTERS:
             if key.startswith(prefix):
                 try:

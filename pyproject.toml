@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mesa-lint"
-version = "0.2.0"
+version = "0.2.1"
 description = "CI-friendly linter for MESA semantic profiles: mesa_profile.json sidecars and mesa-core profile stores."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -23,7 +23,7 @@ classifiers = [
     "Topic :: Software Development :: Quality Assurance",
     "Typing :: Typed",
 ]
-dependencies = ["mesa-core>=1.3"]
+dependencies = ["mesa-core>=1.3.1"]
 
 [project.optional-dependencies]
 yaml = ["pyyaml>=6"]
@@ -37,14 +37,17 @@ Homepage = "https://github.com/leecaochang/mesa-lint"
 
 [tool.hatch.build.targets.wheel]
 packages = ["mesa_lint"]
+core-metadata-version = "2.4"
 
 [tool.hatch.build.targets.sdist]
+core-metadata-version = "2.4"
 # Allowlist, not a blacklist: only these paths can ever ship, regardless of
 # what untracked local files (editor state, notes, caches) exist on disk.
 only-include = [
     "mesa_lint",
     "tests",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE",
     "pyproject.toml",
 ]

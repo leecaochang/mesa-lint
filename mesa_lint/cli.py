@@ -12,6 +12,8 @@ import sys
 from pathlib import Path
 from typing import Any, NoReturn
 
+from mesa_core.exceptions import MesaValidationError
+
 from mesa_lint.linter import (
     ERROR,
     WARNING,
@@ -36,9 +38,9 @@ def _input_error(message: str) -> NoReturn:
 
 def _read_text(path: Path) -> str:
     try:
-        return path.read_text()
-    except OSError as err:
-        _input_error(f"{path}: {err.strerror or err}")
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as err:
+        _input_error(f"{path}: {err}")
 
 
 def _load_automations(path: Path) -> list[dict[str, Any]]:
@@ -64,7 +66,10 @@ def _load_automations(path: Path) -> list[dict[str, Any]]:
         data = [data]
     if not isinstance(data, list):
         _input_error(f"{path}: expected a list of automation configs")
-    return [config for config in data if isinstance(config, dict)]
+    invalid = [i for i, config in enumerate(data) if not isinstance(config, dict)]
+    if invalid:
+        _input_error(f"{path}: automation entries at indices {invalid} must be objects")
+    return data
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -122,8 +127,8 @@ def main(argv: list[str] | None = None) -> int:
         elif path.is_file():
             profile_count += 1
             try:
-                doc = json.loads(path.read_text())
-            except (OSError, json.JSONDecodeError) as err:
+                doc = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, json.JSONDecodeError) as err:
                 findings.append(Finding(ERROR, "unreadable", str(err), str(path)))
                 continue
             findings.extend(lint_document(doc, location=str(path), sidecar=True))
@@ -140,14 +145,17 @@ def main(argv: list[str] | None = None) -> int:
     if args.automations is not None:
         if not saw_dir:
             parser.error("--automations requires a profile store directory input")
-        findings.extend(
-            check_automations(
-                entity_docs,
-                _load_automations(args.automations),
-                scoped_docs=scoped_docs,
-                known_entity_ids=known,
+        try:
+            findings.extend(
+                check_automations(
+                    entity_docs,
+                    _load_automations(args.automations),
+                    scoped_docs=scoped_docs,
+                    known_entity_ids=known,
+                )
             )
-        )
+        except MesaValidationError as err:
+            _input_error(f"{args.automations}: {err}")
     if known is not None:
         findings.extend(check_orphans(entity_docs, known))
 
