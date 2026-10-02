@@ -8,11 +8,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import stat
 import sys
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, NoReturn
 
 from mesa_core.exceptions import MesaValidationError
+from mesa_core.json_io import check_structure, loads
+from mesa_core.store import validate_entity_id
 
 from mesa_lint.linter import (
     ERROR,
@@ -24,6 +28,8 @@ from mesa_lint.linter import (
     lint_store_dir,
 )
 
+_OUTPUT_FORMAT: ContextVar[str] = ContextVar("mesa_lint_format", default="text")
+
 
 def _input_error(message: str) -> NoReturn:
     """Report a usage or input error and exit 2, the documented contract.
@@ -32,43 +38,63 @@ def _input_error(message: str) -> NoReturn:
     as "the lint run found problems" rather than "the input was unusable", so
     the code is set explicitly.
     """
-    print(message, file=sys.stderr)
+    if _OUTPUT_FORMAT.get() == "json":
+        print(
+            json.dumps(
+                {
+                    "findings": [Finding(ERROR, "input", message, "input").to_dict()],
+                    "summary": {"profiles": 0, "errors": 1, "warnings": 0},
+                }
+            )
+        )
+    else:
+        print(Finding(ERROR, "input", message, "input").format_text(), file=sys.stderr)
     raise SystemExit(2)
 
 
 def _read_text(path: Path) -> str:
     try:
-        return path.read_text(encoding="utf-8")
+        return path.read_text(encoding="utf-8-sig")
     except (OSError, UnicodeError) as err:
         _input_error(f"{path}: {err}")
 
 
 def _load_automations(path: Path) -> list[dict[str, Any]]:
     text = _read_text(path)
-    if path.suffix in (".yaml", ".yml"):
+    if path.suffix.lower() in (".yaml", ".yml"):
         try:
             import yaml
         except ImportError:
             _input_error(
-                f"{path}: YAML input requires the yaml extra "
-                "(pip install 'mesa-lint[yaml]')"
+                f"{path}: YAML input requires the yaml extra (pip install 'mesa-lint[yaml]')"
             )
         try:
             data = yaml.safe_load(text)
-        except yaml.YAMLError as err:
+            check_structure(data)
+        except (yaml.YAMLError, MesaValidationError, ValueError, RecursionError) as err:
             _input_error(f"{path}: malformed YAML: {err}")
     else:
         try:
-            data = json.loads(text)
-        except json.JSONDecodeError as err:
+            data = loads(text)
+        except MesaValidationError as err:
             _input_error(f"{path}: malformed JSON: {err}")
-    if isinstance(data, dict):
+    if isinstance(data, dict) and set(data) & {
+        "trigger",
+        "triggers",
+        "condition",
+        "conditions",
+        "action",
+        "actions",
+        "use_blueprint",
+    }:
         data = [data]
     if not isinstance(data, list):
         _input_error(f"{path}: expected a list of automation configs")
     invalid = [i for i, config in enumerate(data) if not isinstance(config, dict)]
     if invalid:
         _input_error(f"{path}: automation entries at indices {invalid} must be objects")
+    if any("id" in config and not isinstance(config["id"], str | int) for config in data):
+        _input_error(f"{path}: automation id must be a string or integer")
     return data
 
 
@@ -83,12 +109,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "paths",
         nargs="+",
-        type=Path,
         help="mesa_profile.json files and/or profile store directories",
     )
-    parser.add_argument(
-        "--strict", action="store_true", help="treat warnings as failures"
-    )
+    parser.add_argument("--strict", action="store_true", help="treat warnings as failures")
     parser.add_argument("--format", choices=("text", "json"), default="text")
     parser.add_argument(
         "--automations",
@@ -111,53 +134,80 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    token = _OUTPUT_FORMAT.set(args.format)
+    try:
+        return _run(args)
+    finally:
+        _OUTPUT_FORMAT.reset(token)
+
+
+def _run(args: argparse.Namespace) -> int:
     findings: list[Finding] = []
     entity_docs: dict[str, dict[str, Any]] = {}
     scoped_docs: dict[str, dict[str, Any]] = {}
+    stores: list[tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]] = []
     profile_count = 0
     saw_dir = False
-    for path in args.paths:
-        if path.is_dir():
+    for raw_path in args.paths:
+        if not raw_path:
+            _input_error("empty input path")
+        path = Path(raw_path)
+        try:
+            mode = path.stat().st_mode
+            is_dir, is_file = stat.S_ISDIR(mode), stat.S_ISREG(mode)
+        except FileNotFoundError:
+            _input_error(f"{path}: no such file or directory")
+        except OSError as err:
+            findings.append(Finding(ERROR, "unreadable", str(err), str(path)))
+            continue
+        if is_dir:
             saw_dir = True
             dir_findings, docs, scoped, count = lint_store_dir(path)
             findings.extend(dir_findings)
-            entity_docs.update(docs)
-            scoped_docs.update(scoped)
+            stores.append((docs, scoped))
             profile_count += count
-        elif path.is_file():
+        elif is_file:
             profile_count += 1
             try:
-                doc = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, UnicodeError, json.JSONDecodeError) as err:
+                doc = loads(path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, MesaValidationError) as err:
                 findings.append(Finding(ERROR, "unreadable", str(err), str(path)))
                 continue
             findings.extend(lint_document(doc, location=str(path), sidecar=True))
         else:
-            parser.error(f"{path}: no such file or directory")
+            _input_error(f"{path}: no such file or directory")
 
     known: list[str] | None = None
     if args.entities is not None:
         if not saw_dir:
-            parser.error("--entities requires a profile store directory input")
-        known = [
-            line.strip() for line in _read_text(args.entities).splitlines() if line.strip()
-        ]
+            _input_error("--entities requires a profile store directory input")
+        known = [line.strip() for line in _read_text(args.entities).splitlines() if line.strip()]
+        if not known or len(set(known)) != len(known):
+            _input_error(f"{args.entities}: entity registry must be non-empty without duplicates")
+        try:
+            for entity_id in known:
+                validate_entity_id(entity_id)
+        except MesaValidationError as err:
+            _input_error(f"{args.entities}: {err}")
     if args.automations is not None:
         if not saw_dir:
-            parser.error("--automations requires a profile store directory input")
+            _input_error("--automations requires a profile store directory input")
         try:
-            findings.extend(
-                check_automations(
-                    entity_docs,
-                    _load_automations(args.automations),
-                    scoped_docs=scoped_docs,
-                    known_entity_ids=known,
+            automations = _load_automations(args.automations)
+            for entity_docs, scoped_docs in stores:
+                findings.extend(
+                    check_automations(
+                        entity_docs,
+                        automations,
+                        scoped_docs=scoped_docs,
+                        known_entity_ids=known,
+                    )
                 )
-            )
         except MesaValidationError as err:
             _input_error(f"{args.automations}: {err}")
     if known is not None:
-        findings.extend(check_orphans(entity_docs, known))
+        for entity_docs, _ in stores:
+            findings.extend(check_orphans(entity_docs, known))
 
     errors = sum(1 for finding in findings if finding.severity == ERROR)
     warnings = sum(1 for finding in findings if finding.severity == WARNING)

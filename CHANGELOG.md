@@ -2,6 +2,15 @@
 
 All notable changes to mesa-lint. Profile validation follows mesa-core; the CLI adds file diagnostics and deployment cross-checks.
 
+## 0.2.2 - 2026-10-02
+
+Requires mesa-core 1.3.2 and uses its repaired validation and bounded JSON ingestion.
+
+- Report unreadable directories and hostile input without tracebacks; preserve JSON output for auxiliary-input errors, escape text diagnostics, and reject empty paths.
+- Inspect actual semantic-meaning locations; match core filename handling; keep multiple stores independent; validate BOM-prefixed, nonempty, unique entity registries.
+- Support case-insensitive YAML suffixes and valid single-automation mappings, bound aliases, and explain incomplete template/blueprint coverage. Empty stores warn and SQLite stores are explicitly unsupported.
+- Add regression witnesses, Python 3.12-3.14 CI, checks without PyYAML, formatting/type checks, and wheel/sdist validation. Clarify exit codes and registry limitations in README.
+
 ## 0.2.1 - 2026-09-22
 
 An input-handling and validation release. The linter findings were reproduced before repair and carry CLI regression tests, including machine-readable output and exit-code checks.

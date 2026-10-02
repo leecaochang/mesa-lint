@@ -43,9 +43,7 @@ def test_schema_error_surfaces() -> None:
 
 
 def test_trust_laundering_is_validator_warning() -> None:
-    laundered = doc(
-        metadata_origin={"source": "user", "generated_at": "2026-06-01T00:00:00+00:00"}
-    )
+    laundered = doc(metadata_origin={"source": "user", "generated_at": "2026-06-01T00:00:00+00:00"})
     findings = lint_document(laundered, location="x")
     assert any(f.code == "validator" and "laundering" in f.message for f in findings)
 
@@ -186,9 +184,7 @@ def test_check_automations_resolves_inherited_none_from_domain_scope() -> None:
     assert findings[0].code == "stale-none" and findings[0].location == "light.porch"
 
     # Without the entity registry the inheriting entity cannot be enumerated.
-    assert (
-        check_automations({}, automations, scoped_docs={"__domain__:light": none_doc}) == []
-    )
+    assert check_automations({}, automations, scoped_docs={"__domain__:light": none_doc}) == []
 
 
 def test_check_automations_resolves_inherited_none_from_integration_scope() -> None:

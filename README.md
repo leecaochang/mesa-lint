@@ -1,6 +1,6 @@
 # mesa-lint
 
-Linter for [MESA](https://github.com/leecaochang/mesa-core) semantic profiles. Run it in CI against the `mesa_profile.json` sidecar your Home Assistant integration ships, or point it at a mesa-core profile store directory to sweep an entire deployment.
+Linter for [MESA](https://github.com/leecaochang/mesa-core) semantic profiles. Run it in CI against the `mesa_profile.json` sidecar your Home Assistant integration ships, or point it at a mesa-core JsonFileBackend store directory to sweep an entire deployment.
 
 注意：我不是 MESA 的原始开发者。我维护这个分支，但仅限于修复缺陷和实现已有规范，不会添加新功能。
 
@@ -11,7 +11,7 @@ mesa-lint custom_components/my_integration/mesa_profile.json   # developer CI mo
 mesa-lint /config/mesa/                                        # operator store mode
 ```
 
-Exit code 0 means clean, 1 means findings failed the run, 2 means usage error. Warnings do not fail the run unless you pass `--strict`.
+Exit code 0 means clean, 1 means findings failed the run, 2 means usage or auxiliary-input error. Warnings do not fail the run unless you pass `--strict`.
 
 ## What it checks
 
@@ -31,7 +31,7 @@ mesa-lint /config/mesa/ --entities entities.txt
 
 `--automations` accepts JSON natively, or YAML with `pip install 'mesa-lint[yaml]'`. `--entities` takes one entity ID per line and does double duty: it drives the orphan check and feeds the automations cross-check as the deployment's entity registry.
 
-As of 0.2, the automations cross-check resolves through profile inheritance: a `triggers_automations: none` declared at domain or integration scope is checked for every entity it covers, provided `--entities` names them. Store directories may contain all five scope namespaces (`__domain__:`, `__integration__:`, `__area__:`, `__device__:`); area- and device-scope declarations are linted for validity but stay inert in the cross-check, because resolving them needs HA registry mappings a CLI does not have.
+As of 0.2, the automations cross-check resolves through profile inheritance: domain declarations are checked against the named entities. Integration declarations resolve only through the domain-name fallback: an integration such as `zha` does not cover every `light` without HA registry mappings. Store directories may contain all four scope namespaces (`__domain__:`, `__integration__:`, `__area__:`, `__device__:`); area- and device-scope declarations are linted for validity but stay inert in the cross-check, because resolving them needs HA registry mappings a CLI does not have.
 
 ## CI usage
 
@@ -51,3 +51,11 @@ ruff check . && mypy
 ```
 
 mesa-lint depends only on `mesa-core` (plus optional `pyyaml`). Apache-2.0.
+
+## Input and output contracts
+
+Unreadable, invalid or hostile profile files produce findings and exit 1. Unusable `--entities` or `--automations` input exits 2; `--format json` preserves machine-readable output on these failures. Text findings escape embedded newlines and control characters. Empty input paths are rejected. Empty directories warn (and fail under `--strict`); SQLite stores are unsupported and must first be exported into JSON profile files.
+
+Store directories are checked independently, including deployment defaults. Entity registries accept a UTF-8 BOM and require at least one unique canonical entity ID. Automation input accepts a list or a single HA automation mapping; arbitrary wrapper objects are rejected. YAML suffix matching is case-insensitive, and cycles/excessive alias expansion produce controlled errors. Without PyYAML, YAML input explains how to install the extra. Template/blueprint reference coverage warnings remain visible.
+
+Validation covers the canonical semantic-meaning locations, bounded JSON structure and diagnostics, forward-compatible access-role extensions, ISO timestamps, meaningful limits and known integration capability fields. Unknown vendor data is retained; schema validity alone does not guarantee a safe policy.

@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '37 3 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.12', '3.13', '3.14']
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: mesa-lint
+      # Until mesa-core is published, CI uses its maintained repository.
+      # Upload the matching core repair before uploading this dependent release.
+      - uses: actions/checkout@v4
+        with:
+          repository: leecaochang/mesa-core
+          ref: main
+          path: mesa-core
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install -e './mesa-core' -e './mesa-lint[dev]' build twine
+      - run: ruff check .
+        working-directory: mesa-lint
+      - run: ruff format --check .
+        working-directory: mesa-lint
+      - run: mypy
+        working-directory: mesa-lint
+      - run: pytest tests/ -v
+        working-directory: mesa-lint
+      - name: Verify optional YAML dependency is optional
+        run: |
+          pip uninstall -y pyyaml
+          pytest tests/ -v
+        working-directory: mesa-lint
+      - run: python -m build
+        working-directory: mesa-lint
+      - run: twine check dist/*
+        working-directory: mesa-lint
+      - run: python scripts/verify_release.py
+        working-directory: mesa-lint
+      - name: Install built distributions
+        run: |
+          python -m build --wheel ./mesa-core --outdir /tmp/core-dist
+          python -m venv /tmp/mesa-wheel
+          /tmp/mesa-wheel/bin/pip install /tmp/core-dist/*.whl mesa-lint/dist/*.whl
+          cd /tmp
+          /tmp/mesa-wheel/bin/mesa-lint --help

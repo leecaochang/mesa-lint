@@ -56,6 +56,7 @@ def test_linter_uses_deployment_default_none(tmp_path, capsys):
 
 
 def test_recursive_yaml_is_a_controlled_input_error(tmp_path):
+    pytest.importorskip("yaml")
     folder = tmp_path / "store"
     folder.mkdir()
     automation_file = tmp_path / "automations.yaml"
@@ -66,6 +67,7 @@ def test_recursive_yaml_is_a_controlled_input_error(tmp_path):
 
 
 def test_shared_yaml_alias_is_accepted(tmp_path):
+    pytest.importorskip("yaml")
     folder = tmp_path / "store"
     folder.mkdir()
     source = tmp_path / "automations.yaml"

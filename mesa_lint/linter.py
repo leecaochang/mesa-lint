@@ -24,7 +24,8 @@ from mesa_core import (
     TriggerValidator,
     validate_document,
 )
-from mesa_core.backends import MemoryBackend
+from mesa_core.backends import JsonFileBackend, MemoryBackend
+from mesa_core.json_io import loads
 
 ERROR = "error"
 WARNING = "warning"
@@ -45,7 +46,11 @@ class Finding:
 
     def format_text(self) -> str:
         flag = "E" if self.severity == ERROR else "W"
-        return f"{self.location}: [{flag}] {self.code}: {self.message}"
+
+        def escaped(value: str) -> str:
+            return json.dumps(value, ensure_ascii=True)[1:-1]
+
+        return f"{escaped(self.location)}: [{flag}] {escaped(self.code)}: {escaped(self.message)}"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -117,8 +122,7 @@ def lint_document(
             Finding(
                 WARNING,
                 "person-missing-privacy",
-                "privacy_classification is required for person entities "
-                "(Enrichment Section 17)",
+                "privacy_classification is required for person entities (Enrichment Section 17)",
                 location,
             )
         )
@@ -135,17 +139,25 @@ def lint_document(
             )
         )
 
-    meaning = sp.get("semantic_meaning")
-    if isinstance(meaning, str) and len(meaning) > VERBOSE_MEANING_THRESHOLD:
-        findings.append(
-            Finding(
-                WARNING,
-                "verbose-meaning",
-                f"semantic_meaning is {len(meaning)} characters; long prose costs "
-                "agent context on every retrieval. Aim for one or two sentences",
-                location,
-            )
-        )
+    if report.ok:
+        pending: list[Any] = [doc]
+        while pending:
+            node = pending.pop()
+            if isinstance(node, list):
+                pending.extend(node)
+            elif isinstance(node, dict):
+                meaning = node.get("semantic_meaning")
+                if isinstance(meaning, str) and len(meaning) > VERBOSE_MEANING_THRESHOLD:
+                    findings.append(
+                        Finding(
+                            WARNING,
+                            "verbose-meaning",
+                            f"semantic_meaning is {len(meaning)} characters; "
+                            "aim for one or two sentences",
+                            location,
+                        )
+                    )
+                pending.extend(value for value in node.values() if isinstance(value, dict | list))
 
     if "metadata_origin" not in sp:
         if sidecar:
@@ -180,13 +192,29 @@ def lint_store_dir(
     entity_docs: dict[str, dict[str, Any]] = {}
     scoped_docs: dict[str, dict[str, Any]] = {}
     count = 0
-    for file in sorted(path.glob("*.json")):
+    backend = JsonFileBackend(path, create_if_missing=False)
+    try:
+        files = sorted(file for file in path.iterdir() if file.suffix == ".json" and file.is_file())
+    except OSError as err:
+        return [Finding(ERROR, "unreadable", str(err), str(path))], {}, {}, 0
+    if not files:
+        findings.append(
+            Finding(
+                WARNING,
+                "empty-store",
+                "no JSON profiles found; SQLite stores are not supported",
+                str(path),
+            )
+        )
+    for file in files:
         key = unquote(file.stem)
         location = str(file)
         count += 1
         try:
-            doc = json.loads(file.read_text(encoding="utf-8"))
-        except (OSError, UnicodeError, json.JSONDecodeError) as err:
+            if backend._existing_path(key).name != file.name:
+                raise MesaValidationError("noncanonical filename cannot be read by JsonFileBackend")
+            doc = loads(file.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, MesaValidationError) as err:
             findings.append(Finding(ERROR, "unreadable", str(err), location))
             continue
         if key == _DEFAULTS_KEY:
@@ -205,10 +233,7 @@ def lint_store_dir(
             try:
                 DeploymentDefaults.from_dict(doc)
                 scoped_docs[key] = doc
-            # mesa-core 1.2.1+ validates nested overrides and reports a
-            # MesaValidationError, which is not a ValueError; older versions let
-            # the raw errors through from the enum and dict lookups.
-            except (MesaValidationError, ValueError, TypeError, KeyError) as err:
+            except MesaValidationError as err:
                 findings.append(
                     Finding(ERROR, "deployment-defaults", f"malformed: {err}", location)
                 )
@@ -272,9 +297,7 @@ def check_automations(
                 except MesaValidationError:
                     pass  # already reported as a schema error
                 break
-    issues = TriggerValidator(store).validate(
-        lambda: automations, entity_ids=known_entity_ids
-    )
+    issues = TriggerValidator(store).validate(lambda: automations, entity_ids=known_entity_ids)
     return [
         Finding(issue.severity, "stale-none", issue.recommendation, issue.entity_id)
         for issue in issues
